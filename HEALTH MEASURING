@@ -1,0 +1,118 @@
+// COVID-19 Remote Health Monitoring System
+// ARDUINO PROJECTS BY R
+// AUTHOR: MAHESH PG
+#include <ESP8266WiFi.h>
+#include <PulseSensorPlayground.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
+#define ONE_WIRE_BUS 5
+#define Red  4
+#define Green  D3 
+#define LED 14 
+#define USE_ARDUINO_INTERRUPTS true    // Set-up low-level interrupts for most acurate BPM math.
+#define sensor 2 // IR tracking sensor
+const int Button = 12; // The button used to record heart rate
+int val = 0;
+int old_val = 0;
+int state=0;
+int value;
+const int Button1 = 13; // The button used to tecord temperature
+int val1 = 0;
+int old_val1 = 0;
+int state1=0;
+int Threshold = 400;
+const int LED13 = 0;
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature sensors(&oneWire);
+float cData;
+float fData;
+PulseSensorPlayground pulseSensor;  // Creates an instance of the PulseSensorPlayground object called "pulseSensor"
+const int PulseWire = A0;       // PulseSensor PURPLE WIRE connected to ANALOG PIN 0       
+const char WEBSITE[] = "api.pushingbox.com"; //pushingbox API server
+const String devid = "Your Device ID"; //device ID from Pushingbox . Incomplete
+const char* MY_SSID = "Your SSID";
+const char* MY_PWD =  "Your password";
+
+void setup(){
+  Serial.begin(115200);
+  sensors.begin();
+  pinMode(sensor, INPUT);
+  pinMode(Red, OUTPUT);
+  pinMode(Green, OUTPUT);
+  pinMode(LED, OUTPUT); 
+  pinMode(Button, INPUT);
+  pinMode(Button1, INPUT);
+  pulseSensor.analogInput(PulseWire);   
+  pulseSensor.blinkOnPulse(LED13);       //auto-magically blink Arduino's LED with heartbeat.
+  pulseSensor.setThreshold(Threshold);
+  
+  // Double-check the "pulseSensor" object was created and "began" seeing a signal. 
+   if (pulseSensor.begin()) {
+    Serial.println("Heartbeat sensor works");  //This prints one time at Arduino power-up,  or on Arduino reset.  
+  }
+  Serial.print("Connecting to "+*MY_SSID);
+  WiFi.begin(MY_SSID, MY_PWD);
+  Serial.println("going into wl connect");
+  while (WiFi.status() != WL_CONNECTED) //not connected,..waiting to connect
+    {
+      delay(1000);
+      Serial.print(".");
+    }
+  Serial.println("wl connected");
+  Serial.println("");
+  Serial.println("Credentials accepted! Connected to wifi\n ");
+  Serial.println("");
+}
+void loop(){ 
+  val = digitalRead (Button);
+  val1=digitalRead(Button1);
+  value=digitalRead(sensor);
+  if ((val==LOW)&& (old_val==HIGH)){
+    state = 1-state;
+    delay(10);
+  }
+  old_val = val;
+  if (state == 1){ // Record heart rate
+    digitalWrite(Green, HIGH);
+    if (pulseSensor.sawStartOfBeat()) {
+      hData = pulseSensor.getBeatsPerMinute();
+    }
+    Serial.println("Your heartbeat (in BPM): ");
+    Serial.print (hData);
+    digitalWrite(Green, LOW);
+  }
+  
+  if((val1==LOW)&&(old_val1==HIGH)){
+    state1=1-state1;
+    delay(10);
+  }
+  old_val1=val1;
+  if(state1==1){ // Record body temperature
+    digitalWrite(Red, HIGH);
+    delay(2000);
+    Serial.println("Place your finger on the temperature sensor");
+    delay(5000);
+    sensors.requestTemperatures();
+    cData = sensors.getTempCByIndex(0);
+    fData = sensors.getTempFByIndex(0);
+    Serial.println("Take your finger from the sensor");
+    digitalWrite(Red, LOW);
+  }
+  
+  if(value==LOW){ // If finger is hovered over the IR sensor
+    WiFiClient client;  //Instantiate WiFi object
+    //Start or API service using our WiFi Client through PushingBox
+    if (client.connect(WEBSITE, 80)){
+      client.print("GET /pushingbox?devid="+devid+"&hData="+(String)hData+"&cData="+(String)cData+"&fData="+(String)fData);
+      client.println(" HTTP/1.1"); 
+      client.print("Host: ");
+      client.println(WEBSITE);
+      client.println("User-Agent: ESP8266/1.0");
+      client.println("Connection: close");
+      client.println();
+      delay(1000); 
+      Serial.println("GET /pushingbox?devid="+devid+"&hData="+(String)hData+"&cData="+(String)cData+"&fData="+(String)fData);
+      Serial.println("End PushBox ");
+    } 
+  }
+  delay(20);
